@@ -163,19 +163,7 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	}
 
 	modelValue := reflect.New(modelType)
-	tableName := namer.TableName(modelType.Name())
-	if tabler, ok := modelValue.Interface().(Tabler); ok {
-		tableName = tabler.TableName()
-	}
-	if tabler, ok := modelValue.Interface().(TablerWithNamer); ok {
-		tableName = tabler.TableName(namer)
-	}
-	if en, ok := namer.(embeddedNamer); ok {
-		tableName = en.Table
-	}
-	if specialTableName != "" && specialTableName != tableName {
-		tableName = specialTableName
-	}
+	tableName := TableNameWithSpecial(dest, value, modelType, modelValue, namer, specialTableName)
 
 	schema := &Schema{
 		Name:             modelType.Name(),
@@ -368,6 +356,49 @@ func ParseWithSpecialTableName(dest interface{}, cacheStore *sync.Map, namer Nam
 	}
 
 	return schema, schema.err
+}
+
+// TableNameWithSpecial returns table name for dest.
+// 0. use type name. (default)
+// 1. use static table name: new(struct{}).TableName() or new(struct{}).TableName(namer)
+// 2. use dynamic table name: dest.TableName() or dest.TableName(namer)
+// 3. use outter schema table name: embeddedNamer.
+// 4. use specialTableName.
+func TableNameWithSpecial(dest interface{}, value reflect.Value, modelType reflect.Type, modelValue reflect.Value, namer Namer, specialTableName string) string {
+	tableName := namer.TableName(modelType.Name())
+
+	// zeroPtr is a pointer to struct without value
+	switch zeroPtr := modelValue.Interface(); tabler := zeroPtr.(type) {
+	case Tabler:
+		tableName = tabler.TableName()
+	case TablerWithNamer:
+		tableName = tabler.TableName(namer)
+	}
+
+	if value.Type() == modelType { // dest is a struct
+		switch tabler := dest.(type) {
+		case Tabler:
+			tableName = tabler.TableName()
+		case TablerWithNamer:
+			tableName = tabler.TableName(namer)
+		}
+	} else if value.Type() == reflect.PointerTo(modelType) { // dest is a pointer to struct
+		switch elem := value.Elem().Interface(); tabler := elem.(type) {
+		case Tabler:
+			tableName = tabler.TableName()
+		case TablerWithNamer:
+			tableName = tabler.TableName(namer)
+		}
+	}
+
+	if en, ok := namer.(embeddedNamer); ok {
+		tableName = en.Table
+	}
+	if specialTableName != "" && specialTableName != tableName {
+		tableName = specialTableName
+	}
+
+	return tableName
 }
 
 // This unrolling is needed to show to the compiler the exact set of methods

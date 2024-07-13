@@ -1,6 +1,7 @@
 package schema_test
 
 import (
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -175,6 +176,67 @@ func TestCustomizeTableName(t *testing.T) {
 
 	if customize.Table != "customize" {
 		t.Errorf("Failed to customize table with TableName method")
+	}
+}
+
+type Tabler struct {
+	Table string
+}
+
+func (t Tabler) TableName() string {
+	return t.Table
+}
+
+func TestDynamicTableName(t *testing.T) {
+	/*
+		type struct {
+			Tabler `gorm: "-:all" json: "-"`
+			ID     uint   `gorm: "column:id;primaryKey" json: "id"`
+			Name   string `gorm: "name" json: "name"`
+		}
+	*/
+	fields := []reflect.StructField{
+		{
+			Name:      "Tabler",
+			Type:      reflect.TypeOf(Tabler{}),
+			Tag:       `gorm: "-:all" json: "-"`,
+			Anonymous: true,
+		},
+		{
+			Name:      "ID",
+			Type:      reflect.TypeOf(uint(0)),
+			Tag:       `gorm: "column:id;primaryKey" json: "id"`,
+			Anonymous: false,
+		},
+		{
+			Name:      "Name",
+			Type:      reflect.TypeOf(""),
+			Tag:       `gorm: "name" json: "name"`,
+			Anonymous: false,
+		},
+	}
+	modelType := reflect.StructOf(fields)
+	ptrValue := reflect.New(modelType)
+	ptrValue.Elem().Field(0).Field(0).SetString("dynamic_table")
+
+	//a pointer value to struct
+	dynamic, err := schema.Parse(ptrValue.Interface(), &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		t.Fatalf("failed to parse dynamic struct ptr, got error %v", err)
+	}
+
+	if dynamic.Table != "dynamic_table" {
+		t.Errorf("Failed to dynamic table with TableName method")
+	}
+
+	// a struct value
+	dynamic, err = schema.Parse(ptrValue.Elem().Interface(), &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		t.Fatalf("failed to parse dynamic struct, got error %v", err)
+	}
+
+	if dynamic.Table != "dynamic_table" {
+		t.Errorf("Failed to dynamic table with TableName method")
 	}
 }
 
